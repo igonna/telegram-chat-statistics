@@ -1,56 +1,11 @@
-from bs4 import BeautifulSoup
 from tkinter import Tk, Button, filedialog, Text, Scrollbar
 from tkinter.ttk import Progressbar
-import glob, os
 from typing import List
-import heapq
-
-class User:
-    def add_word(self, word):
-        if word in self.__words:
-            self.__words[word] += 1
-        else:
-            self.__words[word] = 1
-    
-    def inc_message_count(self):
-        self.__messages_count += 1
-    
-    def __init__(self, name):
-        # messages (content, date, length)
-        self.__messages_count = 0
-        self.__name = name
-        self.__words = {}
-        self.message_lenght = 0
-    
-    def get_words_count(self):
-        return len(self.__words.values())
-    
-    def get_messages_count(self):
-        return self.__messages_count
-    
-    def get_name(self):
-        return self.__name
-    
-    def get_words(self):
-        return self.__words
-
-def get_html_files(dir):
-    html_file_paths = []
-    os.chdir(dir)
-    for file in glob.glob('*.html'):
-        html_file_paths.append(dir + '/' + file)
-    return html_file_paths
-
-def file_to_html(path):
-    f = open(path, 'r')
-    return BeautifulSoup(f.read(), 'html.parser')
-
-def files_to_html(files, update_callback):
-    html_objects = []
-    for file in files:
-        html_objects.append(file_to_html(file))
-        update_callback()
-    return html_objects
+from typing import Dict
+import html_work
+from time_period import TimePeriod
+import numpy as np
+import matplotlib.pyplot as plt
 
 # progress bar
 
@@ -72,84 +27,104 @@ def increase_progress_processing():
 
 
 # analyze start
-def analyze_htmls(objs, update_callback):
+
+def print_users(users):
+    periods: List[TimePeriod] = []
     
-    users = {}
-    for obj in objs:
-        update_callback()
-        messages = obj.html.body.div.find('div', class_='page_body').find('div', class_='history').find_all('div', class_='message')
-        last_name = ''
-        for msg in messages:
-            body = msg.find('div', class_='body')
-            name = body.find('div', class_='from_name')
-            message = body.find('div', class_='text')
-            
-            try:
-                last_name = name.text.strip()
-            except:
-                pass
-            
-            words = []
-            try:
-                message = str.lower(message.text).strip()
-                message = ''.join(char for char in message if char.isalpha() or char == ' ') 
-                
-                if last_name not in users:
-                    users[last_name] = User(last_name)
-                
-                user = users[last_name]
-                user.inc_message_count()
-
-                words = message.split()
-                user.message_lenght += len(message)
-                
-                for w in words:
-                    user.add_word(w)
-            except:
-                pass
-    
-    usr_keys = list(users.keys()) 
-    users_arr = []
-    for usr_key in usr_keys:
-        users_arr.append(users[usr_key])
-    return users_arr
-
-
-def print_users(users: List[User]):
-    users = users[0:2]
-    top_words_count = 20
+    user_names = []
     for user in users:
-        #print(user.get_name(), 'words: ', user.get_words_count(), 'messages: ', user.get_messages_count())
-        avg_len_msg = round(user.message_lenght / user.get_messages_count(), 2)
-        output = f"[{user.get_name()}] [words]: {user.get_words_count()} [messages]: {user.get_messages_count()} [total length]: {user.message_lenght} [avg lenght per message]: {avg_len_msg}"
-        #text_widget.insert('end', str() + ' words: ' + str() + ' messages: ' + str(user.get_messages_count()))
-        text_widget.insert('end', output)
-        words = user.get_words()
-        all_words_sum = sum(words.values())
-        top_words = heapq.nlargest(top_words_count, words, key=words.get)
-        text_widget.insert('end', '\n')
-        for i, key in enumerate(top_words, start=1):
-            percent = round(((words[key]/all_words_sum) * 100), 2)
-            nice_view = f"{i}. {key}: {words[key]} {percent}%"
-            text_widget.insert('end', nice_view + '\n')
-        text_widget.insert('end', '\n')
+        periods.append(TimePeriod(user.days.values()))
+        user_names.append(user.name)
     
+    users_days = []
+    
+    
+    for index, period in enumerate(periods):
+        msg_count = period.get_msg_count()
+        msg_count = msg_count if msg_count > 0 else 1
+        avg_len_msg = round(period.get_msg_len() / msg_count, 2)
+        user_name = user_names[index]
+        
+        output = f"[{user_name}] [words]: {period.get_words_count()} [messages]: {msg_count} [total length]: {period.get_msg_len()} [avg message length]: {avg_len_msg}"
+        text_widget.insert('end', output)
+        text_widget.insert('end', '\n')
+        
+        # top_words_count = 20
+        # words = user.get_words()
+        # all_words_sum = sum(words.values())
+        # top_words = heapq.nlargest(top_words_count, words, key=words.get)
+        # text_widget.insert('end', '\n')
+        # for i, key in enumerate(top_words, start=1):
+        #     percent = round(((words[key]/all_words_sum) * 100), 2)
+        #     nice_view = f"{i}. {key}: {words[key]} {percent}%"
+        #     text_widget.insert('end', nice_view + '\n')
+        
+        users_days.append(period.get_days_msg_count())
+    
+    draw_days_stacked_column_chart(users_days, user_names)
+    #draw_days_percent_stacked_area_chart(users_days, user_names)
+   
+def draw_days_stacked_column_chart(periods, user_names):
+    color_names = list(plt.cm.colors.CSS4_COLORS.keys())
+    color_names = ["red", "blue", "green", "yellow", "orange", "purple"] + color_names
 
-def do_work():
+    max_days = max(periods, key=len)
+    x_days = max_days.keys()    
+    y_msg_counts = [[] for _ in range(len(periods))]
+    
+    for day in x_days:
+        for index, days in enumerate(periods):
+            day_count = days.get(day, 0)
+            y_msg_counts[index].append(day_count)
+            
+    prev_index = 0
+    for index, y_msg_count in enumerate(y_msg_counts):
+        if not index:
+            plt.bar(x_days, y_msg_count, label=user_names[index], color=color_names[index])
+            prev_index = index
+        else:    
+            plt.bar(x_days, y_msg_count, bottom=y_msg_counts[prev_index], label=user_names[index], color=color_names[index])
+    
+    plt.xlabel('time')
+    plt.ylabel('message count')
+    plt.title('Message Count per Day')
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.show()
+    #draw_days_percent_stacked_area_chart(x_days, y_msg_counts, user_names)
+
+
+def draw_days_percent_stacked_area_chart(x_days, y_msg_counts, user_names):
+    sum_msg_counts = np.array(y_msg_counts)
+    
+    percent = sum_msg_counts /  sum_msg_counts.sum(axis=0).astype(float) * 100
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    ax.stackplot(x_days, percent, labels=user_names)
+    ax.set_title('100 % stacked area chart')
+    ax.set_ylabel('Percent (%)')
+    ax.margins(0, 0)
+    plt.xticks(rotation=45)
+    plt.show()
+        
+
+def select_folder_action():
+    text_widget.delete('1.0', 'end')
     dir = filedialog.askdirectory()
-    files = get_html_files(dir)
-    #files = files[0:5]
+    files = html_work.get_html_files(dir)
     init_progress_loading(len(files))
-    html_objects = files_to_html(files, increase_progress_loading)
+    html_objects = html_work.files_to_html(files, increase_progress_loading)
     init_progress_processing(len(files))
-    users = analyze_htmls(html_objects, increase_progress_processing)
+    users = html_work.analyze_htmls(html_objects, increase_progress_processing)
     print_users(users)
 
 
 root = Tk()
 root.title('telegram chat statistics')
 
-select_button = Button(root, text='Select Folder', command=do_work)
+select_button = Button(root, text='Select Folder', command=select_folder_action)
 select_button.pack()
 
 text_widget = Text(root, width=80, height=30)
@@ -166,5 +141,7 @@ progress_bar_loading.pack()
 
 progress_bar_processing = Progressbar(root, orient='horizontal', length=200, mode='determinate')
 progress_bar_processing.pack()
+
+#select_folder_action()
 
 root.mainloop()
